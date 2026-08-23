@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from typing import Iterable, Iterator
+
+from shift_planner.windows import ActivityWindow, StartVerdict
 
 __all__ = ["OverlappingShiftError", "Roster", "Shift"]
 
@@ -29,6 +31,7 @@ class Shift:
     The shift covers the half-open interval ``[start, start + length)``, so a
     shift that ends exactly when the next one starts is not an overlap.
     ``capacity`` is the number of jobs the courier can take during the shift.
+    ``window`` decides how early and how late the courier may report for duty.
     """
 
     worker: str
@@ -36,6 +39,7 @@ class Shift:
     start: datetime
     length: timedelta
     capacity: int = 1
+    window: ActivityWindow = field(default_factory=ActivityWindow)
 
     def __post_init__(self) -> None:
         if not self.worker.strip():
@@ -55,11 +59,25 @@ class Shift:
     def end(self) -> datetime:
         return self.start + self.length
 
+    @property
+    def opens_at(self) -> datetime:
+        return self.window.opens_at(self.start)
+
+    @property
+    def closes_at(self) -> datetime:
+        return self.window.closes_at(self.start)
+
     def covers(self, moment: datetime) -> bool:
         return self.start <= moment < self.end
 
     def overlaps(self, other: "Shift") -> bool:
         return self.start < other.end and other.start < self.end
+
+    def start_verdict(self, moment: datetime) -> StartVerdict:
+        return self.window.verdict(self.start, moment)
+
+    def may_start_at(self, moment: datetime) -> bool:
+        return self.window.accepts(self.start, moment)
 
 
 @dataclass(frozen=True)
@@ -95,6 +113,13 @@ class Roster:
 
     def on_duty(self, moment: datetime) -> tuple[Shift, ...]:
         return tuple(shift for shift in self.shifts if shift.covers(moment))
+
+    def startable(self, worker: str, moment: datetime) -> tuple[Shift, ...]:
+        return tuple(
+            shift
+            for shift in self.shifts
+            if shift.worker == worker and shift.may_start_at(moment)
+        )
 
     def __iter__(self) -> Iterator[Shift]:
         return iter(self.shifts)

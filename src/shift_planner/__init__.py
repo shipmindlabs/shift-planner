@@ -1,7 +1,15 @@
 """Shift planning for field couriers."""
 
 from shift_planner.shifts import OverlappingShiftError, Roster, Shift
+from shift_planner.windows import ActivityWindow, StartVerdict
 
-__all__ = ["OverlappingShiftError", "Roster", "Shift", "__version__"]
+__all__ = [
+    "ActivityWindow",
+    "OverlappingShiftError",
+    "Roster",
+    "Shift",
+    "StartVerdict",
+    "__version__",
+]
 
 __version__ = "0.1.0"

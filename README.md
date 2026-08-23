@@ -45,6 +45,34 @@ except OverlappingShiftError as error:
     print(error)
 ```
 
+### Activity window
+
+A courier may report for duty a little before the planned start and only for a
+while after it. By default the window is `[start - 15 min, start + 1 hour)`.
+
+```python
+from datetime import datetime, timedelta, timezone
+
+from shift_planner import ActivityWindow, Shift, StartVerdict
+
+shift = Shift(
+    worker="anna",
+    location="depot-north",
+    start=datetime(2026, 5, 4, 8, tzinfo=timezone.utc),
+    length=timedelta(hours=4),
+    window=ActivityWindow(
+        early_tolerance=timedelta(minutes=15),
+        late_cutoff=timedelta(hours=1),
+    ),
+)
+
+shift.may_start_at(datetime(2026, 5, 4, 7, 45, tzinfo=timezone.utc))  # True
+shift.start_verdict(datetime(2026, 5, 4, 7, 30, tzinfo=timezone.utc))
+# StartVerdict.TOO_EARLY
+shift.start_verdict(datetime(2026, 5, 4, 9, tzinfo=timezone.utc))
+# StartVerdict.TOO_LATE
+```
+
 ## Development
 
 ```bash
