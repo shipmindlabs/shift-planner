@@ -73,6 +73,38 @@ shift.start_verdict(datetime(2026, 5, 4, 9, tzinfo=timezone.utc))
 # StartVerdict.TOO_LATE
 ```
 
+### Assignment
+
+A job goes to a courier who is on duty **at the job's own location**. The
+candidates are ordered by a policy; `LeastLoaded` is the default, and any
+object with a `sort_key(candidate)` method can replace it.
+
+```python
+from datetime import datetime, timedelta, timezone
+
+from shift_planner import Dispatcher, EarliestStart, Job, Roster, Shift
+
+noon = datetime(2026, 5, 4, 12, tzinfo=timezone.utc)
+roster = Roster(
+    [
+        Shift("anna", "depot-north", noon - timedelta(hours=1), timedelta(hours=4), 5),
+        Shift("boris", "depot-north", noon, timedelta(hours=4), capacity=5),
+        Shift("clara", "depot-south", noon, timedelta(hours=4), capacity=5),
+    ]
+)
+
+dispatcher = Dispatcher(roster)
+job = Job(location="depot-north", at=noon)
+
+dispatcher.assign(job, taken={"anna": 3}).worker  # 'boris'
+dispatcher.assign(job).worker  # 'anna', nobody has a job yet
+
+Dispatcher(roster, policy=EarliestStart()).assign(job, taken={"anna": 3}).worker
+# 'anna', on duty since 11:00
+
+dispatcher.assign(Job(location="depot-west", at=noon))  # None
+```
+
 ## Development
 
 ```bash
