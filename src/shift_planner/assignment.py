@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime
 from typing import Any, Mapping, Protocol
 
+from shift_planner.cooldowns import CooldownBoard
 from shift_planner.shifts import Roster, Shift
 
 __all__ = [
@@ -80,11 +81,16 @@ class Dispatcher:
     """Hands jobs to couriers on duty at the job's own location.
 
     ``taken`` maps a worker to the number of jobs already given to them; a
-    shift drops out once its capacity is used up.
+    shift drops out once its capacity is used up. A courier who declined a job
+    is skipped while their cooldown holds and comes back once it runs out.
     """
 
     roster: Roster
     policy: AssignmentPolicy = field(default_factory=LeastLoaded)
+    cooldowns: CooldownBoard = field(default_factory=CooldownBoard)
+
+    def refuse(self, worker: str, moment: datetime) -> "Dispatcher":
+        return replace(self, cooldowns=self.cooldowns.refuse(worker, moment))
 
     def candidates(
         self, job: Job, taken: Mapping[str, int] | None = None
@@ -93,7 +99,9 @@ class Dispatcher:
         eligible = [
             Candidate(shift, loads.get(shift.worker, 0))
             for shift in self.roster
-            if shift.location == job.location and shift.covers(job.at)
+            if shift.location == job.location
+            and shift.covers(job.at)
+            and not self.cooldowns.locked(shift.worker, job.at)
         ]
         return tuple(
             sorted(
