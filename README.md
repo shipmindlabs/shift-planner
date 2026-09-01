@@ -141,6 +141,52 @@ later = Job(location="depot-north", at=noon + timedelta(minutes=20))
 after_refusal.assign(later).worker  # 'anna', the lock lifted on its own
 ```
 
+### Plans over a horizon
+
+A `ShiftPattern` repeats on chosen weekdays; a `Plan` unrolls the patterns over
+a `Horizon`, dropping holidays and stopping once a worker reaches their limit
+for the span. The roster it yields depends on the plan alone, so drawing the
+plan again is a no-op: `applied_to` replaces exactly what the plan speaks for
+(its own workers inside the horizon) and leaves the rest of the roster alone.
+
+```python
+from datetime import date, time, timedelta
+
+from shift_planner import Holidays, Horizon, Plan, ShiftPattern
+
+plan = Plan(
+    horizon=Horizon(date(2026, 5, 4), days=7),
+    patterns=[
+        ShiftPattern(
+            "anna",
+            "depot-north",
+            time(8),
+            timedelta(hours=8),
+            weekdays={0, 1, 2, 3, 4},
+            capacity=12,
+        ),
+        ShiftPattern(
+            "boris",
+            "depot-north",
+            time(16),
+            timedelta(hours=8),
+            weekdays={0, 2, 4, 5},
+        ),
+    ],
+    holidays=Holidays([date(2026, 5, 6)]),
+    limits={"anna": 3},
+)
+
+roster = plan.roster()
+len(roster)  # 6
+
+[shift.start.date() for shift in roster.for_worker("anna")]
+# [date(2026, 5, 4), date(2026, 5, 5), date(2026, 5, 7)]
+# Wednesday is a holiday, and the limit ends the week early
+
+plan.applied_to(roster) == roster  # True, redrawing adds nothing
+```
+
 ## Development
 
 ```bash

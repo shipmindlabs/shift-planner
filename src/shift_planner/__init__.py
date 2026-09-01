@@ -9,6 +9,7 @@ from shift_planner.assignment import (
     LeastLoaded,
 )
 from shift_planner.cooldowns import Cooldown, CooldownBoard, CooldownLock
+from shift_planner.plans import Holidays, Horizon, Plan, ShiftPattern
 from shift_planner.shifts import OverlappingShiftError, Roster, Shift
 from shift_planner.windows import ActivityWindow, StartVerdict
 
@@ -21,11 +22,15 @@ __all__ = [
     "CooldownLock",
     "Dispatcher",
     "EarliestStart",
+    "Holidays",
+    "Horizon",
     "Job",
     "LeastLoaded",
     "OverlappingShiftError",
+    "Plan",
     "Roster",
     "Shift",
+    "ShiftPattern",
     "StartVerdict",
     "__version__",
 ]
