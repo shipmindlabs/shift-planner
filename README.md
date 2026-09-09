@@ -192,8 +192,12 @@ plan.applied_to(roster) == roster  # True, redrawing adds nothing
 ```bash
 python -m venv .venv
 source .venv/bin/activate
-pip install -e .
+pip install -e ".[dev]"
+python -m pytest
 ```
+
+The tests never read the wall clock: every moment is passed in, and the
+daylight-saving boundaries are covered explicitly.
 
 ## License
 

@@ -24,6 +24,9 @@ classifiers = [
 ]
 dependencies = []
 
+[project.optional-dependencies]
+dev = ["pytest>=7.0"]
+
 [project.urls]
 Homepage = "https://github.com/shipmindlabs/shift-planner"
 Source = "https://github.com/shipmindlabs/shift-planner"
@@ -31,3 +34,7 @@ Issues = "https://github.com/shipmindlabs/shift-planner/issues"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/shift_planner"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
