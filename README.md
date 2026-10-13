@@ -18,7 +18,7 @@ pip install shift-planner
 | Piece | What it is |
 | --- | --- |
 | `Shift` | one worker at one location over the half-open interval `[start, start + length)`, with a job `capacity` and an `ActivityWindow` |
-| `Roster` | shifts sorted by start; two shifts of one worker may touch but never share time |
+| `Roster` | shifts sorted by start; two shifts of one worker never share time and keep at least `rest` between them |
 | `ActivityWindow`, `StartVerdict` | how early and how late a courier may report for duty, and the answer to a reported start |
 | `Job`, `Candidate` | a job to hand out at one location and moment; a shift that could take it, together with its current load |
 | `Dispatcher`, `AssignmentPolicy` | the filter that finds eligible shifts and the order imposed on what survives |
@@ -30,7 +30,8 @@ Three properties hold throughout:
 - **Everything is frozen.** `Roster.add`, `CooldownBoard.refuse` and
   `Dispatcher.refuse` return a new object; the one you held keeps its state.
 - **Every interval is half-open.** A shift that ends when the next one starts is
-  no overlap, a window is shut at its cutoff, a lock is lifted at its `until`.
+  no overlap — and legal as long as the roster asks for no rest — a window is
+  shut at its cutoff, a lock is lifted at its `until`.
 - **No moment comes from the wall clock.** Every check takes the moment as an
   argument. That is what makes the behaviour testable, and what makes the
   timezone rules below observable rather than a matter of when you run.
@@ -71,6 +72,53 @@ try:
 except OverlappingShiftError as error:
     print(error)
 ```
+
+### Minimum rest
+
+A roster can also demand a break between two shifts of the same worker. `rest`
+is the shortest gap allowed between one shift's end and the next one's start.
+It defaults to zero, which rules out nothing but shared time — that is why
+touching shifts are fine until you ask for rest.
+
+```python
+from datetime import datetime, timedelta, timezone
+
+from shift_planner import InsufficientRestError, Roster, Shift
+
+night = Shift(
+    "anna",
+    "depot-north",
+    datetime(2026, 5, 4, 16, tzinfo=timezone.utc),
+    timedelta(hours=8),
+)
+early = Shift(
+    "anna",
+    "depot-north",
+    datetime(2026, 5, 5, 7, tzinfo=timezone.utc),
+    timedelta(hours=4),
+)
+late = Shift(
+    "anna",
+    "depot-north",
+    datetime(2026, 5, 5, 8, tzinfo=timezone.utc),
+    timedelta(hours=4),
+)
+
+try:
+    Roster([night, early], rest=timedelta(hours=8))
+except InsufficientRestError as error:
+    print(error)  # seven hours between the two shifts, one short of the rule
+
+roster = Roster([night, late], rest=timedelta(hours=8))
+len(roster)  # 2, exactly eight hours of rest is enough
+
+roster.add(early)  # InsufficientRestError: add and extend carry the rule on
+```
+
+`OverlappingShiftError` is a subclass of `InsufficientRestError`, because an
+overlap is the zero-rest case of the same rule; it keeps its own name so a
+clash can still be caught on its own. A `Plan` carries `rest` as well and hands
+it to the roster it draws.
 
 ### Activity window
 
@@ -175,6 +223,8 @@ a `Horizon`, dropping holidays and stopping once a worker reaches their limit
 for the span. The roster it yields depends on the plan alone, so drawing the
 plan again is a no-op: `applied_to` replaces exactly what the plan speaks for
 (its own workers inside the horizon) and leaves the rest of the roster alone.
+A plan's `rest` travels with it: the roster it draws holds patterns that leave
+too little rest to the same rule as any other roster.
 
 ```python
 from datetime import date, time, timedelta
@@ -202,6 +252,7 @@ plan = Plan(
     ],
     holidays=Holidays([date(2026, 5, 6)]),
     limits={"anna": 3},
+    rest=timedelta(hours=8),
 )
 
 roster = plan.roster()
@@ -276,7 +327,8 @@ inside an overlap check, where the cause is no longer visible.
 
 `covers`, `overlaps`, `holds_at` and the window verdicts compare datetimes, so
 the zone a moment is written in does not change the answer: `11:00+03:00` and
-`08:00Z` are the same instant and are treated as one.
+`08:00Z` are the same instant and are treated as one. Rest is measured the same
+way, as the distance between two instants.
 
 Adding a length is a different operation. `start + length` and
 `moment + duration` follow Python's rule — a `timedelta` moves the wall clock
@@ -352,7 +404,9 @@ takes the first pass through 02:30. Keep patterns clear of the transition hour,
 or plan in UTC, when that hour matters. And note that a wall-clock pattern
 holds the same local hour all year by design: the instant it lands on moves by
 an hour twice a year, which is usually what field work wants and never what a
-UTC-denominated contract wants.
+UTC-denominated contract wants. A wall-clock plan with a `rest` rule inherits
+the same drift: the night the clocks go back grants an hour of rest that the
+local times do not show, and the night they go forward takes one away.
 
 ## Development
 

@@ -109,10 +109,11 @@ class Plan:
     """Patterns unrolled over a horizon, minus holidays and beyond limits.
 
     ``limits`` caps how many shifts a worker may get across the whole horizon;
-    days are walked in order, so the tail of the span is what falls away. The
-    result is a function of the plan alone, which is what makes redrawing it
-    safe: :meth:`applied_to` replaces exactly what the plan owns and leaves
-    every other shift of the roster where it is.
+    days are walked in order, so the tail of the span is what falls away.
+    ``rest`` is the break the drawn roster demands between two shifts of one
+    worker. The result is a function of the plan alone, which is what makes
+    redrawing it safe: :meth:`applied_to` replaces exactly what the plan owns
+    and leaves every other shift of the roster where it is.
     """
 
     horizon: Horizon
@@ -120,6 +121,7 @@ class Plan:
     holidays: Holidays = field(default_factory=Holidays)
     limits: Mapping[str, int] = field(default_factory=dict)
     zone: tzinfo = timezone.utc
+    rest: timedelta = timedelta(0)
 
     def __post_init__(self) -> None:
         unique: dict[ShiftPattern, None] = {}
@@ -131,6 +133,8 @@ class Plan:
             if limit < 0:
                 raise ValueError(f"limit for {worker!r} must not be negative")
         object.__setattr__(self, "limits", limits)
+        if self.rest < timedelta(0):
+            raise ValueError("rest must not be negative")
 
     @property
     def workers(self) -> frozenset[str]:
@@ -153,7 +157,7 @@ class Plan:
         return tuple(planned)
 
     def roster(self) -> Roster:
-        return Roster(self.shifts())
+        return Roster(self.shifts(), self.rest)
 
     def claims(self, shift: Shift) -> bool:
         """Whether the shift falls in the part of a roster this plan speaks for."""
@@ -163,4 +167,5 @@ class Plan:
 
     def applied_to(self, roster: Roster) -> Roster:
         kept = tuple(shift for shift in roster if not self.claims(shift))
-        return Roster(kept + self.shifts())
+        # Drawing a plan may tighten the rest rule of a roster, never loosen it.
+        return Roster(kept + self.shifts(), max(roster.rest, self.rest))

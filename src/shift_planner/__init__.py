@@ -10,7 +10,12 @@ from shift_planner.assignment import (
 )
 from shift_planner.cooldowns import Cooldown, CooldownBoard, CooldownLock
 from shift_planner.plans import Holidays, Horizon, Plan, ShiftPattern
-from shift_planner.shifts import OverlappingShiftError, Roster, Shift
+from shift_planner.shifts import (
+    InsufficientRestError,
+    OverlappingShiftError,
+    Roster,
+    Shift,
+)
 from shift_planner.windows import ActivityWindow, StartVerdict
 
 __all__ = [
@@ -24,6 +29,7 @@ __all__ = [
     "EarliestStart",
     "Holidays",
     "Horizon",
+    "InsufficientRestError",
     "Job",
     "LeastLoaded",
     "OverlappingShiftError",
