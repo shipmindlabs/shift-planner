@@ -22,6 +22,7 @@ pip install shift-planner
 | `ActivityWindow`, `StartVerdict` | how early and how late a courier may report for duty, and the answer to a reported start |
 | `Job`, `Candidate` | a job to hand out at one location and moment; a shift that could take it, together with its current load |
 | `Dispatcher`, `AssignmentPolicy` | the filter that finds eligible shifts and the order imposed on what survives |
+| `AssignmentVerdict`, `AssignmentReason` | what the dispatcher made of one shift, and why |
 | `Cooldown`, `CooldownLock`, `CooldownBoard` | the lock a refusal puts on a worker, and the record of such locks |
 | `ShiftPattern`, `Horizon`, `Holidays`, `Plan` | a weekly pattern, the span it is drawn over, the days it skips, and the roster it unrolls to |
 
@@ -180,6 +181,26 @@ Dispatcher(roster, policy=EarliestStart()).assign(job, taken={"anna": 3}).worker
 dispatcher.assign(Job(location="depot-west", at=noon))  # None
 ```
 
+### Why a job found no courier
+
+`assign` answers with a courier or with `None`; `explain` says why. It returns
+one `AssignmentVerdict` per roster shift: the eligible ones first, in the order
+the policy put them, then the rejected ones in roster order. A shift's reason
+is the first filter it fails — location, duty, capacity, cooldown, in that
+order — so a shift that is both off duty and at the wrong depot reads as
+`WRONG_LOCATION`.
+
+```python
+[(verdict.worker, verdict.reason.value) for verdict in dispatcher.explain(job, taken={"anna": 5})]
+# [('boris', 'eligible'), ('anna', 'no_capacity'), ('clara', 'wrong_location')]
+
+[verdict.candidate for verdict in dispatcher.explain(job) if verdict.eligible]
+# exactly what candidates(job) returns, in the same order
+
+{verdict.reason for verdict in dispatcher.explain(Job("depot-west", noon))}
+# {<AssignmentReason.WRONG_LOCATION: 'wrong_location'>}, which is why assign gave None
+```
+
 ### Refusal cooldown
 
 Declining a job puts a courier on a cooldown of a fixed length instead of
@@ -271,7 +292,8 @@ A `Dispatcher` does two separate things. It filters first: the shift must be at
 the job's location, must cover the job's moment, must have spare capacity, and
 its worker must not be cooling down. Only then does the policy order what
 survived. The first candidate takes the job, and `assign` returns `None` when
-nobody survived the filter.
+nobody survived the filter — `explain` then names the filter each shift fell
+out on.
 
 The filter is fixed; the order is yours. A policy is any object with a
 `sort_key(candidate)` method returning a tuple:

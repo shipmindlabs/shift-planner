@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field, replace
 from datetime import datetime
+from enum import Enum
 from typing import Any, Mapping, Protocol
 
 from shift_planner.cooldowns import CooldownBoard
@@ -11,6 +12,8 @@ from shift_planner.shifts import Roster, Shift
 
 __all__ = [
     "AssignmentPolicy",
+    "AssignmentReason",
+    "AssignmentVerdict",
     "Candidate",
     "Dispatcher",
     "EarliestStart",
@@ -53,6 +56,40 @@ class Candidate:
         return max(0, self.shift.capacity - self.taken)
 
 
+class AssignmentReason(Enum):
+    """Why a shift did or did not get the job."""
+
+    WRONG_LOCATION = "wrong_location"
+    OFF_DUTY = "off_duty"
+    NO_CAPACITY = "no_capacity"
+    COOLING_DOWN = "cooling_down"
+    ELIGIBLE = "eligible"
+
+    @property
+    def eligible(self) -> bool:
+        return self is AssignmentReason.ELIGIBLE
+
+
+@dataclass(frozen=True)
+class AssignmentVerdict:
+    """What the dispatcher made of one shift when handing out a job."""
+
+    candidate: Candidate
+    reason: AssignmentReason
+
+    @property
+    def shift(self) -> Shift:
+        return self.candidate.shift
+
+    @property
+    def worker(self) -> str:
+        return self.candidate.worker
+
+    @property
+    def eligible(self) -> bool:
+        return self.reason.eligible
+
+
 class AssignmentPolicy(Protocol):
     """Orders the candidates for a job; the first one gets it."""
 
@@ -92,22 +129,44 @@ class Dispatcher:
     def refuse(self, worker: str, moment: datetime) -> "Dispatcher":
         return replace(self, cooldowns=self.cooldowns.refuse(worker, moment))
 
+    def _reason(self, job: Job, candidate: Candidate) -> AssignmentReason:
+        shift = candidate.shift
+        if shift.location != job.location:
+            return AssignmentReason.WRONG_LOCATION
+        if not shift.covers(job.at):
+            return AssignmentReason.OFF_DUTY
+        if candidate.spare_capacity <= 0:
+            return AssignmentReason.NO_CAPACITY
+        if self.cooldowns.locked(shift.worker, job.at):
+            return AssignmentReason.COOLING_DOWN
+        return AssignmentReason.ELIGIBLE
+
+    def explain(
+        self, job: Job, taken: Mapping[str, int] | None = None
+    ) -> tuple[AssignmentVerdict, ...]:
+        """One verdict per roster shift, so a refused job states its reason.
+
+        The eligible shifts come first in the order the policy put them, the
+        rejected ones after them in roster order. A rejected shift carries the
+        first filter it failed.
+        """
+        loads = taken or {}
+        eligible: list[AssignmentVerdict] = []
+        rejected: list[AssignmentVerdict] = []
+        for shift in self.roster:
+            candidate = Candidate(shift, loads.get(shift.worker, 0))
+            verdict = AssignmentVerdict(candidate, self._reason(job, candidate))
+            (eligible if verdict.eligible else rejected).append(verdict)
+        eligible.sort(key=lambda verdict: self.policy.sort_key(verdict.candidate))
+        return tuple(eligible) + tuple(rejected)
+
     def candidates(
         self, job: Job, taken: Mapping[str, int] | None = None
     ) -> tuple[Candidate, ...]:
-        loads = taken or {}
-        eligible = [
-            Candidate(shift, loads.get(shift.worker, 0))
-            for shift in self.roster
-            if shift.location == job.location
-            and shift.covers(job.at)
-            and not self.cooldowns.locked(shift.worker, job.at)
-        ]
         return tuple(
-            sorted(
-                (candidate for candidate in eligible if candidate.spare_capacity > 0),
-                key=self.policy.sort_key,
-            )
+            verdict.candidate
+            for verdict in self.explain(job, taken)
+            if verdict.eligible
         )
 
     def assign(

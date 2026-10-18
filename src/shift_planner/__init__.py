@@ -2,6 +2,8 @@
 
 from shift_planner.assignment import (
     AssignmentPolicy,
+    AssignmentReason,
+    AssignmentVerdict,
     Candidate,
     Dispatcher,
     EarliestStart,
@@ -21,6 +23,8 @@ from shift_planner.windows import ActivityWindow, StartVerdict
 __all__ = [
     "ActivityWindow",
     "AssignmentPolicy",
+    "AssignmentReason",
+    "AssignmentVerdict",
     "Candidate",
     "Cooldown",
     "CooldownBoard",
