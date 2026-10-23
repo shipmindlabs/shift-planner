@@ -240,10 +240,10 @@ after_refusal.assign(later).worker  # 'anna', the lock lifted on its own
 ### Plans over a horizon
 
 A `ShiftPattern` repeats on chosen weekdays; a `Plan` unrolls the patterns over
-a `Horizon`, dropping holidays and stopping once a worker reaches their limit
-for the span. The roster it yields depends on the plan alone, so drawing the
-plan again is a no-op: `applied_to` replaces exactly what the plan speaks for
-(its own workers inside the horizon) and leaves the rest of the roster alone.
+a `Horizon`, dropping holidays and keeping every worker inside their limit for
+the span. The roster it yields depends on the plan alone, so drawing the plan
+again is a no-op: `applied_to` replaces exactly what the plan speaks for (its
+own workers inside the horizon) and leaves the rest of the roster alone.
 A plan's `rest` travels with it: the roster it draws holds patterns that leave
 too little rest to the same rule as any other roster.
 
@@ -285,6 +285,32 @@ len(roster)  # 6
 
 plan.applied_to(roster) == roster  # True, redrawing adds nothing
 ```
+
+#### Limits in shifts or in hours
+
+A limit is either a count or a duration. An `int` caps how many shifts a worker
+gets over the horizon; a `timedelta` caps their summed length. A pattern that
+would carry its worker past the cap is skipped and the walk goes on, so a
+shorter pattern later in the span may still fit.
+
+```python
+capped = Plan(
+    horizon=Horizon(date(2026, 5, 4), days=7),
+    patterns=[
+        ShiftPattern("anna", "depot-north", time(8), timedelta(hours=10)),
+        ShiftPattern("anna", "depot-north", time(20), timedelta(hours=2), weekdays={4}),
+    ],
+    limits={"anna": timedelta(hours=42)},
+)
+
+[(shift.start.day, shift.length) for shift in capped.roster()]
+# [(4, 10:00:00), (5, 10:00:00), (6, 10:00:00), (7, 10:00:00), (8, 2:00:00)]
+# Friday's ten-hour day would cross the cap; the two-hour pattern still fits
+```
+
+The sum is of the lengths the patterns declare — wall-clock lengths, the same
+ones every `Shift` carries — so a cap is neither shortened nor stretched by a
+daylight-saving transition inside the horizon.
 
 ## Policies
 

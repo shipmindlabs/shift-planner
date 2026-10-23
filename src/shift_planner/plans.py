@@ -11,6 +11,8 @@ from shift_planner.windows import ActivityWindow
 
 __all__ = ["Holidays", "Horizon", "Plan", "ShiftPattern"]
 
+ZERO = timedelta(0)
+
 
 @dataclass(frozen=True)
 class Horizon:
@@ -85,7 +87,7 @@ class ShiftPattern:
             raise ValueError("weekdays must not be empty")
         if any(weekday not in range(7) for weekday in self.weekdays):
             raise ValueError("weekdays must be between 0 (Monday) and 6 (Sunday)")
-        if self.length <= timedelta(0):
+        if self.length <= ZERO:
             raise ValueError("length must be positive")
         if self.capacity < 1:
             raise ValueError("capacity must be at least 1")
@@ -108,10 +110,12 @@ class ShiftPattern:
 class Plan:
     """Patterns unrolled over a horizon, minus holidays and beyond limits.
 
-    ``limits`` caps how many shifts a worker may get across the whole horizon;
-    days are walked in order, so the tail of the span is what falls away.
-    ``rest`` is the break the drawn roster demands between two shifts of one
-    worker. The result is a function of the plan alone, which is what makes
+    ``limits`` caps a worker across the whole horizon: an ``int`` caps the
+    number of shifts, a ``timedelta`` caps their summed length. Days are walked
+    in order, and a pattern that would carry its worker past the cap is skipped
+    while the walk goes on, so a shorter pattern later in the span may still
+    fit. ``rest`` is the break the drawn roster demands between two shifts of
+    one worker. The result is a function of the plan alone, which is what makes
     redrawing it safe: :meth:`applied_to` replaces exactly what the plan owns
     and leaves every other shift of the roster where it is.
     """
@@ -119,7 +123,7 @@ class Plan:
     horizon: Horizon
     patterns: tuple[ShiftPattern, ...] = ()
     holidays: Holidays = field(default_factory=Holidays)
-    limits: Mapping[str, int] = field(default_factory=dict)
+    limits: Mapping[str, int | timedelta] = field(default_factory=dict)
     zone: tzinfo = timezone.utc
     rest: timedelta = timedelta(0)
 
@@ -130,10 +134,12 @@ class Plan:
         object.__setattr__(self, "patterns", tuple(unique))
         limits = dict(self.limits)
         for worker, limit in limits.items():
-            if limit < 0:
+            if not isinstance(limit, (int, timedelta)):
+                raise TypeError(f"limit for {worker!r} must be an int or a timedelta")
+            if limit < (ZERO if isinstance(limit, timedelta) else 0):
                 raise ValueError(f"limit for {worker!r} must not be negative")
         object.__setattr__(self, "limits", limits)
-        if self.rest < timedelta(0):
+        if self.rest < ZERO:
             raise ValueError("rest must not be negative")
 
     @property
@@ -143,17 +149,23 @@ class Plan:
     def shifts(self) -> tuple[Shift, ...]:
         planned: list[Shift] = []
         counts: dict[str, int] = {}
+        worked: dict[str, timedelta] = {}
         for day in self.horizon:
             if day in self.holidays:
                 continue
             for pattern in self.patterns:
                 if not pattern.occurs_on(day):
                     continue
-                limit = self.limits.get(pattern.worker)
-                if limit is not None and counts.get(pattern.worker, 0) >= limit:
+                worker = pattern.worker
+                limit = self.limits.get(worker)
+                if isinstance(limit, timedelta):
+                    if worked.get(worker, ZERO) + pattern.length > limit:
+                        continue
+                elif limit is not None and counts.get(worker, 0) >= limit:
                     continue
                 planned.append(pattern.shift_on(day, self.zone))
-                counts[pattern.worker] = counts.get(pattern.worker, 0) + 1
+                counts[worker] = counts.get(worker, 0) + 1
+                worked[worker] = worked.get(worker, ZERO) + pattern.length
         return tuple(planned)
 
     def roster(self) -> Roster:
